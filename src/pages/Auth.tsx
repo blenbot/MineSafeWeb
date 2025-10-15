@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,20 +7,19 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import logo from "@/assets/logo.png";
 
-const authSchema = z.object({
-  email: z.string().email("Invalid email address").max(255),
-  password: z.string().min(6, "Password must be at least 6 characters").max(72),
-  fullName: z.string().min(2, "Name must be at least 2 characters").max(100).optional(),
-});
-
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+    name: "",
+    phone: "",
+    mining_site: "",
+    location: "",
+  });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signIn, signUp } = useAuth();
   const { toast } = useToast();
 
   // Redirect if already logged in
@@ -32,97 +29,56 @@ export default function Auth() {
     }
   }, [user, navigate]);
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // Validate input
-      const validationData = isLogin
-        ? { email, password }
-        : { email, password, fullName };
-      
-      authSchema.parse(validationData);
-
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) {
-          if (error.message.includes("Invalid login credentials")) {
-            toast({
-              title: "Login Failed",
-              description: "Invalid email or password. Please try again.",
-              variant: "destructive",
-            });
-          } else {
-            toast({
-              title: "Login Failed",
-              description: error.message,
-              variant: "destructive",
-            });
-          }
-          return;
-        }
-
+        await signIn(formData.email, formData.password);
         toast({
           title: "Welcome back!",
           description: "You've successfully logged in.",
         });
-        navigate("/");
       } else {
-        const redirectUrl = `${window.location.origin}/`;
-        
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: redirectUrl,
-            data: {
-              full_name: fullName,
-            },
-          },
-        });
-
-        if (error) {
-          if (error.message.includes("already registered")) {
-            toast({
-              title: "Account Exists",
-              description: "This email is already registered. Please login instead.",
-              variant: "destructive",
-            });
-          } else {
-            toast({
-              title: "Signup Failed",
-              description: error.message,
-              variant: "destructive",
-            });
-          }
+        // Validate supervisor signup fields
+        if (!formData.name || !formData.phone || !formData.mining_site || !formData.location) {
+          toast({
+            title: "Missing Information",
+            description: "Please fill in all required fields.",
+            variant: "destructive",
+          });
+          setLoading(false);
           return;
         }
 
+        await signUp({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          password: formData.password,
+          mining_site: formData.mining_site,
+          location: formData.location,
+        });
+        
         toast({
           title: "Account Created!",
           description: "Welcome to MineSafe. You're now logged in.",
         });
-        navigate("/");
       }
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        toast({
-          title: "Validation Error",
-          description: error.issues[0].message,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Error",
-          description: "An unexpected error occurred. Please try again.",
-          variant: "destructive",
-        });
-      }
+    } catch (error: any) {
+      toast({
+        title: isLogin ? "Login Failed" : "Signup Failed",
+        description: error.message || "An error occurred. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -150,28 +106,74 @@ export default function Auth() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {!isLogin && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  type="text"
-                  placeholder="John Doe"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                  className="h-12 bg-secondary/50 border-secondary"
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    type="text"
+                    placeholder="John Supervisor"
+                    value={formData.name}
+                    onChange={handleChange}
+                    required
+                    className="h-12 bg-secondary/50 border-secondary"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone Number</Label>
+                  <Input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    placeholder="9876543210"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    required
+                    className="h-12 bg-secondary/50 border-secondary"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mining_site">Mining Site Name</Label>
+                  <Input
+                    id="mining_site"
+                    name="mining_site"
+                    type="text"
+                    placeholder="Coal Mine Site A"
+                    value={formData.mining_site}
+                    onChange={handleChange}
+                    required
+                    className="h-12 bg-secondary/50 border-secondary"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="location">Location</Label>
+                  <Input
+                    id="location"
+                    name="location"
+                    type="text"
+                    placeholder="Dhanbad, Jharkhand"
+                    value={formData.location}
+                    onChange={handleChange}
+                    required
+                    className="h-12 bg-secondary/50 border-secondary"
+                  />
+                </div>
+              </>
             )}
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
+                name="email"
                 type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="supervisor@example.com"
+                value={formData.email}
+                onChange={handleChange}
                 required
                 className="h-12 bg-secondary/50 border-secondary"
               />
@@ -181,10 +183,11 @@ export default function Auth() {
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
+                name="password"
                 type="password"
                 placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={formData.password}
+                onChange={handleChange}
                 required
                 className="h-12 bg-secondary/50 border-secondary"
               />
